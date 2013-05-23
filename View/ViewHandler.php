@@ -140,10 +140,6 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
      */
     protected function getStatusCode(View $view, $content = null)
     {
-        if (200 !== ($code = $view->getStatusCode())) {
-            return $code;
-        }
-
         $data = $view->getData();
         if ($data instanceof FormInterface) {
             $form = $data;
@@ -155,6 +151,10 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
 
         if ($form && $form->isBound() && !$form->isValid()) {
             return $this->failedValidationCode;
+        }
+
+        if (200 !== ($code = $view->getStatusCode())) {
+            return $code;
         }
 
         return null !== $content ? Codes::HTTP_OK : $this->emptyContentCode;
@@ -205,14 +205,15 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
     public function getSerializationContext(View $view)
     {
         $context = $view->getSerializationContext();
-        if (null === $context) {
-            $context = new SerializationContext();
 
+        if ($context->attributes->get('groups')->isEmpty()) {
             $groups = $this->container->getParameter('fos_rest.serializer.exclusion_strategy.groups');
             if ($groups) {
                 $context->setGroups($groups);
             }
+        }
 
+        if ($context->attributes->get('version')->isEmpty()) {
             $version = $this->container->getParameter('fos_rest.serializer.exclusion_strategy.version');
             if ($version) {
                 $context->setVersion($version);
@@ -274,11 +275,15 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
     public function createRedirectResponse(View $view, $location, $format)
     {
         $content = null;
-        $response = $view->getResponse();
-        if ('html' === $format && isset($this->forceRedirects[$format])) {
-            $redirect = new RedirectResponse($location);
-            $content = $redirect->getContent();
-            $response->setContent($content);
+        if ($view->getStatusCode() == Codes::HTTP_CREATED && $view->getData() != null) {
+            $response = $this->initResponse($view, $format);
+        } else {
+            $response = $view->getResponse();
+            if ('html' === $format && isset($this->forceRedirects[$format])) {
+                $redirect = new RedirectResponse($location);
+                $content = $redirect->getContent();
+                $response->setContent($content);
+            }
         }
 
         $code = isset($this->forceRedirects[$format])
@@ -361,6 +366,25 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
             return $this->createRedirectResponse($view, $location, $format);
         }
 
+        $response = $this->initResponse($view, $format);
+
+        if (!$response->headers->has('Content-Type')) {
+            $response->headers->set('Content-Type', $request->getMimeType($format));
+        }
+
+        return $response;
+    }
+    
+    /**
+     * Initializes a response object that represents the view and holds the view's status code.
+     *
+     * @param View    $view
+     * @param string  $format
+     *
+     * @return Response
+     */
+    private function initResponse(View $view, $format) 
+    {
         $content = null;
         if ($this->isFormatTemplating($format)) {
             $content = $this->renderTemplate($view, $format);
@@ -381,10 +405,6 @@ class ViewHandler extends ContainerAware implements ViewHandlerInterface
             $response->setContent($content);
         }
 
-        if (!$response->headers->has('Content-Type')) {
-            $response->headers->set('Content-Type', $request->getMimeType($format));
-        }
-
         return $response;
-    }
+    }    
 }
