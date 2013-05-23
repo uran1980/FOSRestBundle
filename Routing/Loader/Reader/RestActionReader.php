@@ -29,6 +29,7 @@ class RestActionReader
     private $annotationReader;
     private $paramReader;
     private $inflector;
+    private $formats;
 
     private $includeFormat;
 
@@ -47,12 +48,13 @@ class RestActionReader
      * @param InflectorInterface $inflector
      * @param boolean $includeFormat
      */
-    public function __construct(Reader $annotationReader, ParamReader $paramReader, InflectorInterface $inflector, $includeFormat)
+    public function __construct(Reader $annotationReader, ParamReader $paramReader, InflectorInterface $inflector, $includeFormat, array $formats = array())
     {
         $this->annotationReader = $annotationReader;
         $this->paramReader = $paramReader;
         $this->inflector = $inflector;
         $this->includeFormat = $includeFormat;
+        $this->formats = $formats;
     }
 
     /**
@@ -179,7 +181,6 @@ class RestActionReader
         // generated parameters
         $routeName    = $this->namePrefix.strtolower($routeName);
         $pattern      = implode('/', $urlParts);
-        $pattern     .= $this->includeFormat === true ? '.{_format}' : null;
         $defaults     = array('_controller' => $method->getName());
         $requirements = array('_method' => strtoupper($httpMethod));
         $options      = array();
@@ -192,10 +193,18 @@ class RestActionReader
                 $annoRequirements['_method'] = $requirements['_method'];
             }
 
-            $pattern      = $annotation->getPattern() ?: $pattern;
+            $pattern      = $annotation->getPattern() !== null ? $this->routePrefix . $annotation->getPattern() : $pattern;
             $requirements = array_merge($requirements, $annoRequirements);
             $options      = array_merge($options, $annotation->getOptions());
             $defaults     = array_merge($defaults, $annotation->getDefaults());
+        }
+
+        if ($this->includeFormat === true) {
+            $pattern .= '.{_format}';
+
+            if (!empty($this->formats)) {
+                $requirements['_format'] = implode('|', array_keys($this->formats));
+            }
         }
 
         // add route to collection
